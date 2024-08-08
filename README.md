@@ -22,6 +22,15 @@ UC San Diego, Hillbot
 
 </div>
 
+### Mesh Segmentation Demo
+
+Our model support mesh segmentation by sampling points from the mesh and propagate segmentation labels back to the mesh. We deployed a huggingface demo at 🤗[demo](https://huggingface.co/spaces/yuchen0187/Point-SAM)🤗. We also provide local mesh segmentation demo at https://github.com/zyc00/point-sam-demo. Some meshes in glb format are provided in [examples](https://github.com/zyc00/point-sam-demo/tree/main/examples).
+
+<p>
+  <img src="./assets/indoor-ezgif.com-video-to-gif-converter.gif" width="49%"/>
+  <img src="./assets/outdoor-ezgif.com-video-to-gif-converter.gif" width="49%"/>
+</p>
+
 
 <p>
   <img src="./assets/teaser.jpeg" width="100%"/>
@@ -61,14 +70,6 @@ model = build_point_sam(ckpt_path, group_number, group_size)
 model.set_pointcloud(coords, colors)
 model.predict_masks(prompt_coords, prompt_labels)
 ```
-### Mesh Segmentation Demo
-
-Our model support mesh segmentation by sampling points from the mesh and propagate segmentation labels back to the mesh. We deployed a huggingface demo at 🤗[demo](https://huggingface.co/spaces/yuchen0187/Point-SAM)🤗. We also provide local mesh segmentation demo at https://github.com/zyc00/point-sam-demo. Some meshes in glb format are provided in [examples](https://github.com/zyc00/point-sam-demo/tree/main/examples).
-
-<p>
-  <img src="./assets/indoor-ezgif.com-video-to-gif-converter.gif" width="49%"/>
-  <img src="./assets/outdoor-ezgif.com-video-to-gif-converter.gif" width="49%"/>
-</p>
 
 #### Demo Usage
 

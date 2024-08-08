@@ -31,11 +31,6 @@ Our model support mesh segmentation by sampling points from the mesh and propaga
   <img src="./assets/outdoor-ezgif.com-video-to-gif-converter.gif" width="49%"/>
 </p>
 
-
-<p>
-  <img src="./assets/teaser.jpeg" width="100%"/>
-</p>
-
 ### Installation
 The code requires `python>=3.8`, `timm>=0.9.0`, `pytorch>=2.1.0`, `torchvision>=0.16.0`. Please follow the offcial guide to install Pytorch, timm and TorchVision dependencies. We also recommend compiling third partiy modules with `g++=9.3.0`.
 
@@ -70,6 +65,10 @@ model = build_point_sam(ckpt_path, group_number, group_size)
 model.set_pointcloud(coords, colors)
 model.predict_masks(prompt_coords, prompt_labels)
 ```
+
+<p>
+  <img src="./assets/teaser.jpeg" width="100%"/>
+</p>
 
 #### Demo Usage
 

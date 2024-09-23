@@ -15,8 +15,8 @@ import os
 # 参数解析
 parser = argparse.ArgumentParser(description="PointSAM Command-Line Interface")
 parser.add_argument("--checkpoint", type=str, default="pretrained/model.safetensors", help="Path to the model checkpoint.")
-parser.add_argument("--pointcloud", type=str, default="yingrenshi.ply", help="Path to the point cloud file (.ply).")
-parser.add_argument("--output_dir", type=str, default="output/bce_prompt_label_0", help="Directory to save the results.")
+parser.add_argument("--pointcloud", type=str, default="yingrenshi_downsampled_10_100.txt", help="Path to the point cloud file (.ply).")
+parser.add_argument("--output_dir", type=str, default="output/0906_bce_no_global_one_prompt", help="Directory to save the results.")
 parser.add_argument("--iter", type=int, default=200, help="Number of fine-tuning iter.")
 args = parser.parse_args()
 
@@ -31,7 +31,7 @@ if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)
 
 # 加载预训练模型并转为训练模式
-sam = build_point_sam(args.checkpoint).cuda()
+sam = build_point_sam(args.checkpoint, num_group=2048, group_size=256).cuda()
 sam.train()  # 设置模型为训练模式
 
 # 损失函数和优化器
@@ -119,17 +119,67 @@ def buld_gt_mask_for_instance_seg(idx, data):
 
     return mask_tensor
 
+def buld_prompt_for_instance_seg(idx, data):
+    ### 从给出的point idx 生成几个与其 semantic_label 和 instance_label 相同(属于同一个instance)的点作为prompt points， prompt label 为 1
+    ## 从不属于 同一个instance 点中随机选取几个副样本点，prompt label 为 0
+
+    positive_num = 3
+    neg_num = 5
+
+    # 获取与该点相同的 semantic_label 和 instance_label
+    semantic_label = data['semantic_label'][idx]
+    instance_label = data['instance_label'][idx]
+
+    # 构建正样本 mask，筛选与该点属于同一个 semantic_label 和 instance_label 的点
+    positive_mask = (data['semantic_label'] == semantic_label) & (data['instance_label'] == instance_label)
+
+    # 获取所有符合条件的正样本点索引
+    positive_indices = np.where(positive_mask)[0]
+
+    # 如果正样本点少于需要的数量，直接全部选取
+    if len(positive_indices) <= positive_num:
+        selected_positive_indices = positive_indices
+    else:
+        # 随机选取正样本点
+        selected_positive_indices = np.random.choice(positive_indices, size=positive_num, replace=False)
+
+    # 构建负样本 mask，筛选与该点不属于同一个 instance 的点
+    negative_mask = (data['semantic_label'] != semantic_label) | (data['instance_label'] != instance_label)
+
+    # 获取所有符合条件的负样本点索引
+    negative_indices = np.where(negative_mask)[0]
+
+    # 如果负样本点少于需要的数量，直接全部选取
+    if len(negative_indices) <= neg_num:
+        selected_negative_indices = negative_indices
+    else:
+        # 随机选取负样本点
+        selected_negative_indices = np.random.choice(negative_indices, size=neg_num, replace=False)
+
+    # 合并正负样本点
+    prompt_points = np.concatenate([selected_positive_indices, selected_negative_indices])
+
+    # 构建对应的 labels：正样本为 1，负样本为 0
+    prompt_labels = np.concatenate([np.ones(len(selected_positive_indices)), np.zeros(len(selected_negative_indices))])
+
+
+    return prompt_points, prompt_labels
+
 
 def segment_pointcloud(prompt_point, prompt_label):
-    global prompts, labels, prompt_mask, segment_mask
-
+    # global prompts, labels, prompt_mask, segment_mask
+    # TODO global is a bug
+    prompt_mask, segment_mask = None, None
+    prompts, labels = [], []
     # Append prompt points and labels
     prompts.append(prompt_point)
     labels.append(prompt_label)
 
     # Prepare data for model
-    prompt_points = torch.from_numpy(np.array(prompts)).cuda().float()[None, ...]
-    prompt_labels = torch.from_numpy(np.array(labels)).cuda()[None, ...]
+    # prompt_points = torch.from_numpy(np.array(prompts)).cuda().float()[None, ...]
+    prompt_points = torch.from_numpy(np.array(prompts)).cuda().float().reshape(1, -1, 3)
+    # prompt_labels = torch.from_numpy(np.array(labels)).cuda()[None, ...]
+    prompt_labels = torch.from_numpy(np.array(labels)).cuda().float().reshape(1, -1)
 
     sam.set_pointcloud(pc_xyz, pc_rgb)
     mask, scores, logits = sam.predict_masks(
@@ -157,9 +207,13 @@ def save_results():
 def fine_tune():
     # Load the point cloud and ground truth labels
     global pc_xyz, pc_rgb
-    # pc_xyz, pc_rgb = load_pointcloud(args.pointcloud)
-    # pc_xyz, pc_rgb, data = load_pc_from_txt("Yingrenshi_whole_scene.txt")
-    pc_xyz, pc_rgb, data = load_pc_from_txt("yingrenshi_downsampled.txt")
+
+    if args.pointcloud.endswith("ply"):
+        pc_xyz, pc_rgb = load_pointcloud(args.pointcloud)
+    elif args.pointcloud.endswith("txt"):
+        pc_xyz, pc_rgb, data = load_pc_from_txt(args.pointcloud)
+    else:
+        raise NotImplementedError("point cloud format not supported yet.")
     pc_xyz, pc_rgb = torch.from_numpy(pc_xyz).cuda().float(), torch.from_numpy(pc_rgb).cuda().float()
     pc_xyz, pc_rgb = pc_xyz.unsqueeze(0), pc_rgb.unsqueeze(0)
 
@@ -184,8 +238,13 @@ def fine_tune():
         gt_mask = buld_gt_mask_for_instance_seg(now_pick_idx, data)
 
         # 使用 ground truth 的标签
-        prompt_label = 0 # TODO always positive prompt
+        prompt_label = 1 # TODO always positive prompt
         prompt_point = np.array(now_pick_xyz.detach().cpu())
+
+        # prompt_point_idx, prompt_label__ = buld_prompt_for_instance_seg(now_pick_idx, data)
+        # prompt_label_ = np.ones(1)
+        # prompt_label = np.concatenate([prompt_label_, prompt_label__]).astype(int)
+        # prompt_point = np.concatenate([pc_xyz[0, now_pick_idx].unsqueeze(0).cpu(), pc_xyz[0, prompt_point_idx].cpu()])
 
         # 调用 segmentation 函数
         mask, scores, logits = segment_pointcloud(prompt_point, prompt_label)
@@ -206,7 +265,7 @@ def fine_tune():
         progress_bar.set_postfix(loss=loss.item())
 
         # log seg-ed pc and gt pc
-        if (iter+1) % 10 == 0:
+        if iter % 3 == 0:
             gt_xyz, gt_rgb = pc_xyz[0][gt_mask], pc_rgb[0][gt_mask]
             storePly(f"{args.output_dir}/gt_pc_{iter}.ply", gt_xyz.cpu(), gt_rgb.cpu() * 255)
             

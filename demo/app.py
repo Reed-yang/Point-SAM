@@ -166,6 +166,8 @@ def segment():
         mask, scores, logits = sam.predict_masks(
             prompt_points, prompt_labels, prompt_mask, prompt_mask is None
         )
+        print(f"prompt_points shape {prompt_points.shape}")
+        print(f"prompt_labels shape {prompt_labels.shape}")
     prompt_mask = logits[0][torch.argmax(scores[0])][None, ...]
     global segment_mask
     segment_mask = return_mask = mask[0][torch.argmax(scores[0])] > 0
